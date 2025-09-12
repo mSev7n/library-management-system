@@ -1,0 +1,49 @@
+<!-- public/index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Library Management</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Library Management System</h1>
+
+    <section class="controls">
+      <form id="addBookForm">
+        <h2>Add a Book</h2>
+        <input name="title" id="title" placeholder="Title" required />
+        <input name="author" id="author" placeholder="Author" required />
+        <input name="genre" id="genre" placeholder="Genre" />
+        <input name="year" id="year" type="number" placeholder="Year" />
+        <input name="copiesAvailable" id="copiesAvailable" type="number" min="0" placeholder="Copies available" value="1" />
+        <button type="submit">Add Book</button>
+      </form>
+
+      <div class="search">
+        <input id="searchInput" placeholder="Search by title, author, or genre..." />
+        <select id="filterGenre">
+          <option value="">All genres</option>
+        </select>
+        <button id="searchBtn">Search</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+
+      <div class="stats" id="stats">
+        <!-- total and summary stats injected here -->
+      </div>
+    </section>
+
+    <section>
+      <h2>Books</h2>
+      <div id="booksList">
+        <!-- books, rendered by script -->
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
