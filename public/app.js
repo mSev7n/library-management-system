@@ -206,7 +206,14 @@ async function promptAndUpdateBook(id) {
 // Borrow book
 async function borrowBook(id) {
   try {
-    const res = await fetch(`${API_BASE}/${id}/borrow`, { method: 'POST' });
+    const res = await fetch(`/api/borrow/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        borrowerName: prompt("Enter borrower's name:"),
+        borrowerPhone: prompt("Enter borrower's phone number:")
+      })
+    });
     const data = await res.json();
     if (!data.success) {
       alert(data.message || 'Could not borrow');
@@ -222,7 +229,7 @@ async function borrowBook(id) {
 // Return book
 async function returnBook(id) {
   try {
-    const res = await fetch(`${API_BASE}/${id}/return`, { method: 'POST' });
+    const res = await fetch(`/api/borrow/${id}/return`, { method: 'POST' });
     const data = await res.json();
     if (!data.success) {
       alert('Could not return');

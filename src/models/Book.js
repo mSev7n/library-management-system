@@ -22,6 +22,7 @@ const BookSchema = new mongoose.Schema(
     },
     year: {
       type: Number,
+       required: true,
     },
     // number of copies available for borrowing
     copiesAvailable: {
@@ -30,11 +31,18 @@ const BookSchema = new mongoose.Schema(
       default: 1,
       min: 0,
     },
-    // maybe later we can add coverImageUrl, description, whatever, etc.
-  },
-  {
-    timestamps: true, // createdAt, updatedAt
-  }
+    coverImage: {
+      type: String, // URL/path of uploaded image
+      default: ""
+    },
+    coverColor: {
+      type: String, // fallback if no image
+      default: "#3498db" // default color
+    }
+    },
+    {
+      timestamps: true, // createdAt, updatedAt
+    }
 );
 
 module.exports = mongoose.model('Book', BookSchema);

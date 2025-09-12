@@ -9,6 +9,7 @@ const cors = require('cors');
 
 const connectDB = require('./config/db');
 const bookRoutes = require('./routes/books');
+const borrowRoutes = require('./routes/borrow');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -24,6 +25,7 @@ app.use(morgan('dev')); // logging in dev
 
 // API routes
 app.use('/api/books', bookRoutes);
+app.use('/api/borrow', borrowRoutes);
 
 // Serve frontend static files (public folder)
 app.use(express.static(path.join(__dirname, '..', 'public')));
