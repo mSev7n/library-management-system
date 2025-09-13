@@ -206,7 +206,7 @@ async function promptAndUpdateBook(id) {
 // Borrow book
 async function borrowBook(id) {
   try {
-    const res = await fetch(`/api/borrow/${id}`, {
+    const res = await fetch(`/api/borrow/borrow/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -229,10 +229,10 @@ async function borrowBook(id) {
 // Return book
 async function returnBook(id) {
   try {
-    const res = await fetch(`/api/borrow/${id}/return`, { method: 'POST' });
+    const res = await fetch(`/api/borrow/return/${id}`, { method: 'POST' });
     const data = await res.json();
     if (!data.success) {
-      alert('Could not return');
+      alert(data.message || 'Could not return');
       return;
     }
     fetchAndRenderBooks(currentQuery);
