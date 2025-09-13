@@ -1,27 +1,40 @@
 const Book = require("../models/Book");
-const BorrowRecord = require("../models/BorrowRecord");
 
 // Borrow a book
 exports.borrowBook = async (req, res, next) => {
   try {
-    const { bookId, borrowerName, borrowerPhone } = req.body;
+    const { id } = req.params; // book id comes from URL
+    const { borrowerName, borrowerPhone } = req.body;
 
-    // Atomically decrement copiesAvailable if > 0
-    const book = await Book.findOneAndUpdate(
-      { _id: bookId, copiesAvailable: { $gt: 0 } },
-      { $inc: { copiesAvailable: -1 } },
-      { new: true }
-    );
-    if (!book) return res.status(400).json({ message: "Book not available" });
+    // Validate input
+    if (!borrowerName || !borrowerPhone) {
+      return res.status(400).json({ message: "Borrower's name and phone are required" });
+    }
 
-    // Create borrow record
-    const borrowRecord = await BorrowRecord.create({
-      book: bookId,
-      borrowerName,
-      borrowerPhone
+    // Find book
+    const book = await Book.findById(id);
+    if (!book) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+
+    // Check availability
+    if (book.copiesAvailable < 1) {
+      return res.status(400).json({ message: "Book not available" });
+    }
+
+    // Decrement available copies
+    book.copiesAvailable -= 1;
+
+    // Add borrower info into borrowers array
+    book.borrowers.push({
+      name: borrowerName,
+      phone: borrowerPhone,
+      borrowedAt: new Date(),
     });
 
-    res.status(201).json({ message: "Book borrowed successfully", borrowRecord });
+    await book.save();
+
+    res.status(201).json({ message: "Book borrowed successfully", data: book });
   } catch (error) {
     next(error);
   }
@@ -30,32 +43,39 @@ exports.borrowBook = async (req, res, next) => {
 // Return a book
 exports.returnBook = async (req, res, next) => {
   try {
-    const { recordId } = req.body;
+    const { id } = req.params; // book id comes from URL
 
-    // Find borrow record
-    const record = await BorrowRecord.findById(recordId).populate("book");
-    if (!record) return res.status(404).json({ message: "Borrow record not found" });
+    // Find book
+    const book = await Book.findById(id);
+    if (!book) {
+      return res.status(404).json({ message: "Book not found" });
+    }
 
-    if (record.returnedAt) return res.status(400).json({ message: "Book already returned" });
+    // Ensure there’s at least one borrower
+    if (book.borrowers.length === 0) {
+      return res.status(400).json({ message: "No active borrow to return" });
+    }
 
-    // Mark return
-    record.returnedAt = new Date();
-    await record.save();
+    // Remove the last borrower (simple strict system: one return == one borrow undone)
+    book.borrowers.pop();
 
-    // Atomically increment book copies
-    await Book.findByIdAndUpdate(record.book._id, { $inc: { copiesAvailable: 1 } });
+    // Increment available copies
+    book.copiesAvailable += 1;
 
-    res.json({ message: "Book returned successfully", record });
+    await book.save();
+
+    res.json({ message: "Book returned successfully", data: book });
   } catch (error) {
     next(error);
   }
 };
 
-// Get all borrow records
+// Get all borrow records (from borrowers array inside books)
 exports.getBorrowRecords = async (req, res, next) => {
   try {
-    const records = await BorrowRecord.find().populate("book");
-    res.json(records);
+    // Fetch all books and their borrowers
+    const books = await Book.find().select("title author borrowers");
+    res.json({ success: true, data: books });
   } catch (error) {
     next(error);
   }
