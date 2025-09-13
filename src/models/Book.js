@@ -3,6 +3,24 @@
 
 const mongoose = require('mongoose');
 
+// sub-schema for borrowers
+const BorrowerSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  phone: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  borrowedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
 const BookSchema = new mongoose.Schema(
   {
     title: {
@@ -22,7 +40,7 @@ const BookSchema = new mongoose.Schema(
     },
     year: {
       type: Number,
-       required: true,
+      required: true,
     },
     // number of copies available for borrowing
     copiesAvailable: {
@@ -38,11 +56,13 @@ const BookSchema = new mongoose.Schema(
     coverColor: {
       type: String, // fallback if no image
       default: "#3498db" // default color
-    }
     },
-    {
-      timestamps: true, // createdAt, updatedAt
-    }
+    // list of borrowers who borrowed this book
+    borrowers: [BorrowerSchema],
+  },
+  {
+    timestamps: true, // createdAt, updatedAt
+  }
 );
 
 module.exports = mongoose.model('Book', BookSchema);
