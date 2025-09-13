@@ -2,6 +2,8 @@
 // controller functions for book-related routes (CRUD, borrow/return, list with search/filter) type shi
 
 const Book = require('../models/Book');
+const path = require('path');
+const fs = require('fs');
 
 // @desc    Create a new book
 // @route   POST /api/books
@@ -9,6 +11,12 @@ const Book = require('../models/Book');
 const createBook = async (req, res, next) => {
   try {
     const { title, author, genre, year, copiesAvailable } = req.body;
+    let coverImagePath = '';
+
+    // if file uploaded, store relative path
+    if (req.file) {
+      coverImagePath = `/uploads/${req.file.filename}`;
+    }
 
     const book = await Book.create({
       title,
@@ -16,6 +24,7 @@ const createBook = async (req, res, next) => {
       genre,
       year,
       copiesAvailable: copiesAvailable ?? 1,
+      coverImage: coverImagePath,
     });
 
     res.status(201).json({ success: true, data: book });
@@ -85,6 +94,12 @@ const getBookById = async (req, res, next) => {
 const updateBook = async (req, res, next) => {
   try {
     const updates = req.body;
+
+    // handle new image upload
+    if (req.file) {
+      updates.coverImage = `/uploads/${req.file.filename}`;
+    }
+
     const book = await Book.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
@@ -112,6 +127,15 @@ const deleteBook = async (req, res, next) => {
       error.statusCode = 404;
       throw error;
     }
+
+    // delete cover image from uploads folder if exists
+    if (book.coverImage) {
+      const filePath = path.join(__dirname, '../public', book.coverImage);
+      fs.unlink(filePath, err => {
+        if (err) console.warn('Failed to delete cover image:', err.message);
+      });
+    }
+
     res.json({ success: true, data: {} });
   } catch (err) {
     next(err);

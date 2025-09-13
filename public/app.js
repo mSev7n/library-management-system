@@ -60,19 +60,42 @@ async function fetchAndRenderBooks(q = {}) {
   data.data.forEach(book => {
     const card = document.createElement('div');
     card.className = 'book-card';
-    card.innerHTML = `
+
+    // Book cover
+    const coverDiv = document.createElement('div');
+    coverDiv.className = 'book-cover';
+    if (book.coverImage && book.coverImage.trim() !== '') {
+      coverDiv.style.backgroundImage = `url('${book.coverImage}')`;
+      coverDiv.style.backgroundColor = 'transparent';
+    } else {
+      coverDiv.style.backgroundImage = 'none';
+      coverDiv.style.backgroundColor = book.coverColor || '#3498db';
+    }
+
+    // Book info
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'book-info';
+    infoDiv.innerHTML = `
       <h3>${escapeHtml(book.title)}</h3>
       <div class="small">Author: ${escapeHtml(book.author)}</div>
       <div class="small">Genre: ${escapeHtml(book.genre || 'General')}</div>
       <div class="small">Year: ${book.year || '—'}</div>
       <div class="small">Copies available: <strong>${book.copiesAvailable}</strong></div>
-      <div class="book-actions">
-        <button data-id="${book._id}" class="updateBtn">Update</button>
-        <button data-id="${book._id}" class="deleteBtn">Delete</button>
-        <button data-id="${book._id}" class="borrowBtn">Borrow</button>
-        <button data-id="${book._id}" class="returnBtn">Return</button>
-      </div>
     `;
+
+    // Actions
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'book-actions';
+    actionsDiv.innerHTML = `
+      <button data-id="${book._id}" class="updateBtn">Update</button>
+      <button data-id="${book._id}" class="deleteBtn">Delete</button>
+      <button data-id="${book._id}" class="borrowBtn">Borrow</button>
+      <button data-id="${book._id}" class="returnBtn">Return</button>
+    `;
+
+    card.appendChild(coverDiv);
+    card.appendChild(infoDiv);
+    card.appendChild(actionsDiv);
 
     booksList.appendChild(card);
   });
@@ -90,19 +113,11 @@ function escapeHtml(str) {
 addBookForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const formData = new FormData(addBookForm);
-  const payload = {
-    title: formData.get('title'),
-    author: formData.get('author'),
-    genre: formData.get('genre'),
-    year: formData.get('year') ? Number(formData.get('year')) : undefined,
-    copiesAvailable: formData.get('copiesAvailable') ? Number(formData.get('copiesAvailable')) : 1,
-  };
 
   try {
     const res = await fetch(API_BASE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: formData, // sending as multipart/form-data
     });
     const data = await res.json();
     if (!data.success) {
@@ -372,7 +387,6 @@ async function returnBook(id) {
     alert("Error returning book");
   }
 }
-
 
 // Search & filter
 searchBtn.addEventListener('click', () => {

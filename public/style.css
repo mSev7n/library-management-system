@@ -1,4 +1,3 @@
-
 body {
   font-family: Arial, sans-serif;
   background: #f4f7fb;
@@ -61,10 +60,54 @@ button {
   padding: 12px;
   border-radius: 8px;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.04);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-direction: column; /* make content stack vertically */
 }
 
 .book-card h3 { margin: 0 0 6px 0; }
-.book-actions { display:flex; gap:8px; margin-top:10px; }
-.book-actions button { padding:6px 8px; font-size:14px; }
-.small { font-size: 0.9em; color: #555; }
-.stats { margin-top: 8px; background: #fff; padding:10px; border-radius:8px; }
+
+/* Book cover */
+.book-cover {
+  width: 80px;
+  height: 120px;
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  border-radius: 3px;
+  margin-bottom: 8px; /* spacing below cover */
+}
+
+/* Book info next to cover */
+.book-info {
+  flex-grow: 1;
+}
+
+/* Small text styling */
+.small {
+  font-size: 0.9em;
+  color: #555;
+}
+
+/* Actions buttons */
+.book-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap; /* wrap buttons to next line if needed */
+  margin-top: 10px;
+}
+
+.book-actions button {
+  padding: 6px 8px;
+  font-size: 14px;
+  margin-top: 0; /* remove extra margin, controlled by flex gap */
+  margin-right: 0;
+}
+
+.stats { 
+  margin-top: 8px; 
+  background: #fff; 
+  padding:10px; 
+  border-radius:8px; 
+}

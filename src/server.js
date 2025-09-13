@@ -27,6 +27,9 @@ app.use(morgan('dev')); // logging in dev
 app.use('/api/books', bookRoutes);
 app.use('/api/borrow', borrowRoutes);
 
+// Serve uploaded images
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
 // Serve frontend static files (public folder)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -40,6 +43,6 @@ app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running in ${process.env.NODE_ENV} on http://0.0.0.0:${PORT}`);
 });
