@@ -19,6 +19,12 @@ const BorrowerSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  copies: {    //  added this to track number of copies per borrower
+    type: Number,
+    required: true,
+    default: 1,
+    min: 1
+  }
 });
 
 const BookSchema = new mongoose.Schema(

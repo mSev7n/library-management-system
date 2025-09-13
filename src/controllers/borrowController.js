@@ -3,34 +3,46 @@ const Book = require("../models/Book");
 // Borrow a book
 exports.borrowBook = async (req, res, next) => {
   try {
-    const { id } = req.params; // book id comes from URL
-    const { borrowerName, borrowerPhone } = req.body;
+    const { id } = req.params;
+    let { borrowerName, borrowerPhone, copies } = req.body;
 
-    // Validate input
     if (!borrowerName || !borrowerPhone) {
       return res.status(400).json({ success: false, message: "Borrower's name and phone are required" });
     }
 
-    // Find book
+    // Ensure copies is a number
+    copies = parseInt(copies);
+    if (!copies || copies < 1) {
+      return res.status(400).json({ success: false, message: "Number of copies to borrow is required" });
+    }
+
     const book = await Book.findById(id);
     if (!book) {
       return res.status(404).json({ success: false, message: "Book not found" });
     }
 
-    // Check availability
-    if (book.copiesAvailable < 1) {
-      return res.status(400).json({ success: false, message: "Book not available" });
+    if (book.copiesAvailable < copies) {
+      return res.status(400).json({ success: false, message: `Only ${book.copiesAvailable} copies available` });
     }
 
-    // Decrement available copies
-    book.copiesAvailable -= 1;
+    const existingBorrower = book.borrowers.find(
+      b => b.name === borrowerName && b.phone === borrowerPhone
+    );
 
-    // Add borrower info into borrowers array
-    book.borrowers.push({
-      name: borrowerName,
-      phone: borrowerPhone,
-      borrowedAt: new Date(),
-    });
+    if (existingBorrower) {
+      // Accumulate copies correctly
+      existingBorrower.copies = (existingBorrower.copies || 0) + copies;
+      existingBorrower.borrowedAt = new Date();
+    } else {
+      book.borrowers.push({
+        name: borrowerName,
+        phone: borrowerPhone,
+        borrowedAt: new Date(),
+        copies: copies
+      });
+    }
+
+    book.copiesAvailable -= copies;
 
     await book.save();
 
@@ -44,6 +56,13 @@ exports.borrowBook = async (req, res, next) => {
 exports.returnBook = async (req, res, next) => {
   try {
     const { id } = req.params; // book id comes from URL
+    let { borrowerName, borrowerPhone, count } = req.body; // count = number of copies to return
+
+    // Ensure count is a number
+    count = parseInt(count);
+    if (!count || count < 1) {
+      return res.status(400).json({ success: false, message: "Number of copies to return is required" });
+    }
 
     // Find book
     const book = await Book.findById(id);
@@ -56,11 +75,24 @@ exports.returnBook = async (req, res, next) => {
       return res.status(400).json({ success: false, message: "No active borrow to return" });
     }
 
-    // Remove the last borrower (simple strict system: one return == one borrow undone)
-    book.borrowers.pop();
+    // Find the specific borrower by name + phone
+    const borrower = book.borrowers.find(b => b.name === borrowerName && b.phone === borrowerPhone);
+    if (!borrower) {
+      return res.status(400).json({ success: false, message: "Borrower not found" });
+    }
+
+    const returnCount = Math.min(count, borrower.copies || 1);
+
+    if ((borrower.copies || 1) <= returnCount) {
+      // Remove borrower entirely if all copies returned
+      book.borrowers = book.borrowers.filter(b => !(b.name === borrowerName && b.phone === borrowerPhone));
+    } else {
+      // Reduce the copies count for partial return
+      borrower.copies -= returnCount;
+    }
 
     // Increment available copies
-    book.copiesAvailable += 1;
+    book.copiesAvailable += returnCount;
 
     await book.save();
 

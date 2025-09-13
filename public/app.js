@@ -228,17 +228,27 @@ async function borrowBook(id) {
     const borrowerPhone = prompt("Enter borrower's phone number:");
     if (borrowerPhone === null) return; // user clicked Cancel
 
-    // Optional: validate empty string
     if (!borrowerName.trim() || !borrowerPhone.trim()) {
       alert("Borrower's name and phone are required");
       return;
     }
 
-    // Proceed to borrow
+    // Prompt for number of copies
+    const maxCopies = bookData.data.copiesAvailable;
+    let copies;
+    while (true) {
+      const copiesStr = prompt(`How many copies to borrow? (1 - ${maxCopies})`);
+      if (copiesStr === null) return; // cancel
+      copies = parseInt(copiesStr);
+      if (!isNaN(copies) && copies >= 1 && copies <= maxCopies) break;
+      alert(`Invalid number of copies. Must be between 1 and ${maxCopies}`);
+    }
+
+    // Send borrow request to backend
     const res = await fetch(`/api/borrow/borrow/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ borrowerName, borrowerPhone }),
+      body: JSON.stringify({ borrowerName, borrowerPhone, copies }), // send copies as number
     });
 
     const data = await res.json();
@@ -258,18 +268,111 @@ async function borrowBook(id) {
 // Return book
 async function returnBook(id) {
   try {
-    const res = await fetch(`/api/borrow/return/${id}`, { method: 'POST' });
-    const data = await res.json();
-    if (!data.success) {
-      alert(data.message || 'Could not return');
+    // Fetch book data including borrowers
+    const resBook = await fetch(`/api/books/${id}`);
+    const bookData = await resBook.json();
+
+    if (!bookData.success) {
+      alert(bookData.message || "Error fetching book");
       return;
     }
+
+    const borrowers = bookData.data.borrowers;
+    if (borrowers.length === 0) {
+      alert("No active borrow to return");
+      return;
+    }
+
+    // Display list of borrowers
+    let listStr = "Borrowers:\n";
+    borrowers.forEach((b, index) => {
+      listStr += `${index + 1}. ${b.name} - ${b.phone} (Borrowed: ${b.copies || 1})\n`;
+    });
+    listStr += "\nEnter the number of the borrower to return, or type a name to search:";
+
+    let selection = prompt(listStr);
+    if (selection === null) return; // user clicked Cancel
+
+    let borrower;
+    let borrowerIndex;
+
+    if (!isNaN(selection)) {
+      borrowerIndex = parseInt(selection) - 1;
+      borrower = borrowers[borrowerIndex];
+      if (!borrower) {
+        alert("Invalid selection");
+        return;
+      }
+    } else {
+      const matched = borrowers
+        .map((b, index) => ({ ...b, index }))
+        .filter(b => b.name.toLowerCase().includes(selection.toLowerCase()));
+
+      if (matched.length === 0) {
+        alert("No borrower found with that name");
+        return;
+      } else if (matched.length === 1) {
+        borrower = matched[0];
+        borrowerIndex = matched[0].index;
+      } else {
+        let matchList = "Multiple borrowers found:\n";
+        matched.forEach((b, i) => {
+          matchList += `${i + 1}. ${b.name} - ${b.phone} (Borrowed: ${b.copies || 1})\n`;
+        });
+        matchList += "\nEnter the number of the borrower to return:";
+        const subSelection = prompt(matchList);
+        if (subSelection === null) return; // cancel
+        const subIndex = parseInt(subSelection) - 1;
+        if (isNaN(subIndex) || subIndex < 0 || subIndex >= matched.length) {
+          alert("Invalid selection");
+          return;
+        }
+        borrower = matched[subIndex];
+        borrowerIndex = borrower.index;
+      }
+    }
+
+    // Determine how many copies to return
+    const borrowedCopies = borrower.copies || 1;
+    let returnCount = borrowedCopies;
+    if (borrowedCopies > 1) {
+      while (true) {
+        let input = prompt(`This borrower has ${borrowedCopies} copies. How many do you want to return? Type "all" for all:`);
+        if (input === null) return; // cancel
+        if (input.toLowerCase() === "all") {
+          returnCount = borrowedCopies;
+          break;
+        }
+        const n = parseInt(input);
+        if (!isNaN(n) && n > 0 && n <= borrowedCopies) {
+          returnCount = n;
+          break;
+        }
+        alert(`Invalid number. Must be between 1 and ${borrowedCopies}`);
+      }
+    }
+
+    // Call backend to return selected borrower using name + phone
+    const res = await fetch(`/api/borrow/return/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ borrowerName: borrower.name, borrowerPhone: borrower.phone, count: returnCount })
+    });
+
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.message || "Could not return");
+      return;
+    }
+
+    alert("Returned successfully!");
     fetchAndRenderBooks(currentQuery);
   } catch (err) {
     console.error(err);
-    alert('Error returning book');
+    alert("Error returning book");
   }
 }
+
 
 // Search & filter
 searchBtn.addEventListener('click', () => {
