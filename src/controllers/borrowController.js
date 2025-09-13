@@ -8,18 +8,18 @@ exports.borrowBook = async (req, res, next) => {
 
     // Validate input
     if (!borrowerName || !borrowerPhone) {
-      return res.status(400).json({ message: "Borrower's name and phone are required" });
+      return res.status(400).json({ success: false, message: "Borrower's name and phone are required" });
     }
 
     // Find book
     const book = await Book.findById(id);
     if (!book) {
-      return res.status(404).json({ message: "Book not found" });
+      return res.status(404).json({ success: false, message: "Book not found" });
     }
 
     // Check availability
     if (book.copiesAvailable < 1) {
-      return res.status(400).json({ message: "Book not available" });
+      return res.status(400).json({ success: false, message: "Book not available" });
     }
 
     // Decrement available copies
@@ -34,7 +34,7 @@ exports.borrowBook = async (req, res, next) => {
 
     await book.save();
 
-    res.status(201).json({ message: "Book borrowed successfully", data: book });
+    res.status(201).json({ success: true, message: "Book borrowed successfully", data: book });
   } catch (error) {
     next(error);
   }
@@ -48,12 +48,12 @@ exports.returnBook = async (req, res, next) => {
     // Find book
     const book = await Book.findById(id);
     if (!book) {
-      return res.status(404).json({ message: "Book not found" });
+      return res.status(404).json({ success: false, message: "Book not found" });
     }
 
     // Ensure there’s at least one borrower
     if (book.borrowers.length === 0) {
-      return res.status(400).json({ message: "No active borrow to return" });
+      return res.status(400).json({ success: false, message: "No active borrow to return" });
     }
 
     // Remove the last borrower (simple strict system: one return == one borrow undone)
@@ -64,7 +64,7 @@ exports.returnBook = async (req, res, next) => {
 
     await book.save();
 
-    res.json({ message: "Book returned successfully", data: book });
+    res.json({ success: true, message: "Book returned successfully", data: book });
   } catch (error) {
     next(error);
   }
@@ -74,7 +74,7 @@ exports.returnBook = async (req, res, next) => {
 exports.getBorrowRecords = async (req, res, next) => {
   try {
     // Fetch all books and their borrowers
-    const books = await Book.find().select("title author borrowers");
+    const books = await Book.find().select("title author borrowers copiesAvailable");
     res.json({ success: true, data: books });
   } catch (error) {
     next(error);

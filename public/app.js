@@ -206,23 +206,52 @@ async function promptAndUpdateBook(id) {
 // Borrow book
 async function borrowBook(id) {
   try {
-    const res = await fetch(`/api/borrow/borrow/${id}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        borrowerName: prompt("Enter borrower's name:"),
-        borrowerPhone: prompt("Enter borrower's phone number:")
-      })
-    });
-    const data = await res.json();
-    if (!data.success) {
-      alert(data.message || 'Could not borrow');
+    // First, check if the book is available
+    const availabilityRes = await fetch(`/api/books/${id}`);
+    const bookData = await availabilityRes.json();
+
+    if (!bookData.success) {
+      alert(bookData.message || "Error fetching book");
       return;
     }
-    fetchAndRenderBooks(currentQuery);
+
+    if (bookData.data.copiesAvailable < 1) {
+      alert("No copies available");
+      return;
+    }
+
+    // Prompt for borrower's name
+    const borrowerName = prompt("Enter borrower's name:");
+    if (borrowerName === null) return; // user clicked Cancel
+
+    // Prompt for borrower's phone
+    const borrowerPhone = prompt("Enter borrower's phone number:");
+    if (borrowerPhone === null) return; // user clicked Cancel
+
+    // Optional: validate empty string
+    if (!borrowerName.trim() || !borrowerPhone.trim()) {
+      alert("Borrower's name and phone are required");
+      return;
+    }
+
+    // Proceed to borrow
+    const res = await fetch(`/api/borrow/borrow/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ borrowerName, borrowerPhone }),
+    });
+
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.message || "Could not borrow");
+      return;
+    }
+
+    alert("Borrowed successfully!");
+    fetchAndRenderBooks(currentQuery); // refresh list
   } catch (err) {
     console.error(err);
-    alert('Error borrowing book');
+    alert("Error borrowing book");
   }
 }
 
