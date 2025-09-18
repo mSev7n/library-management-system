@@ -24,6 +24,15 @@ async function connectDB() {
   }
 }
 
+// -- Helpers ---------------------------------------------------------------
+function escapeRegExp(string) {
+  return String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeText(s) {
+  return s === undefined || s === null ? "" : String(s).trim();
+}
+
 // Menu
 async function mainMenu() {
   const { action } = await inquirer.prompt([
@@ -38,6 +47,7 @@ async function mainMenu() {
         "Borrow a Book",
         "Return a Book",
         "Borrow Record",
+        "Update a Book",
         "Delete a Book",
         "Switch to GUI",
         "Exit",
@@ -63,6 +73,9 @@ async function mainMenu() {
       break;
     case "Borrow Record":
       await borrowRecordExplorer();
+      break;
+    case "Update a Book":
+      await updateBook();
       break;
     case "Delete a Book":
       await deleteBook();
@@ -224,8 +237,18 @@ async function borrowBook() {
       if (phone === undefined) return;
       const val = String(phone).trim();
       if (!val) {
-        console.log("Enter a phone number (or type 'back'/'cancel')");
-        continue;
+        // allow empty phone but confirm
+        const { confirmEmpty } = await inquirer.prompt([
+          {
+            type: "confirm",
+            name: "confirmEmpty",
+            message: "No phone entered — continue without phone?",
+            default: false,
+          },
+        ]);
+        if (!confirmEmpty) continue;
+        borrowerPhone = "";
+        break;
       }
       if (val.toLowerCase() === "back") {
         // go back to name
@@ -278,33 +301,22 @@ async function borrowBook() {
 
     if (numCopies === null) continue; // user went back to phone/name stage
 
-    // Step 4: reuse existing BorrowRecord or create new one
-    const existing = await BorrowRecord.findOne({
-      book: bookId,
-      borrowerName,
-      borrowerPhone,
-      returnedAt: null,
-    });
+    // Step 4: create a new BorrowRecord every time (fix for multiple borrows)
+    const normName = normalizeText(borrowerName);
+    const normPhone = normalizeText(borrowerPhone);
 
-    if (existing) {
-      // increment copies (safely default to 0)
-      existing.copies = (existing.copies || 0) + numCopies;
-      existing.borrowedAt = new Date();
-      await existing.save();
-    } else {
-      await BorrowRecord.create({
-        book: bookId,
-        borrowerName,
-        borrowerPhone,
-        copies: numCopies,
-      });
-    }
+    await BorrowRecord.create({
+      book: book._id,
+      borrowerName: normName,
+      borrowerPhone: normPhone,
+      copies: numCopies,
+    });
 
     // Step 5: decrement book copies
     book.copiesAvailable = Math.max(0, book.copiesAvailable - numCopies);
     await book.save();
 
-    console.log(`✅ Borrowed ${numCopies} copy(ies) of "${book.title}" to ${borrowerName}`);
+    console.log(`✅ Borrowed ${numCopies} copy(ies) of "${book.title}" to ${normName}`);
     return; // finished borrowing flow
   }
 }
@@ -360,21 +372,24 @@ async function returnBook() {
     return;
   }
 
-  // Group borrowers by name-phone with representative record id
+  // Group borrowers by normalized name-phone with representative data
   function buildBorrowerGroups(list) {
     const map = new Map();
     list.forEach((r) => {
-      const key = `${r.borrowerName || "<unknown>"}||${r.borrowerPhone || ""}`;
+      const name = normalizeText(r.borrowerName) || "<unknown>";
+      const phone = normalizeText(r.borrowerPhone) || "";
+      const key = `${name.toLowerCase()}||${phone}`;
       const existing = map.get(key);
       if (!existing) {
         map.set(key, {
-          borrowerName: r.borrowerName || "<unknown>",
-          borrowerPhone: r.borrowerPhone || "",
+          borrowerName: name,
+          borrowerPhone: phone,
           totalCopies: r.copies || 1,
-          repId: String(r._id),
+          records: [r] // Keep track of all records for this borrower
         });
       } else {
         existing.totalCopies += (r.copies || 1);
+        existing.records.push(r); // Add this record to the existing borrower
       }
     });
     return Array.from(map.values());
@@ -384,7 +399,7 @@ async function returnBook() {
   async function selectBorrowerInteractive(groups) {
     const choices = groups.map((g, idx) => ({
       name: `${idx + 1}. ${g.borrowerName} (${g.borrowerPhone || "no phone"}) — ${g.totalCopies} active copy(ies)`,
-      value: g.repId,
+      value: JSON.stringify({ name: g.borrowerName, phone: g.borrowerPhone }),
     }));
     choices.push(new inquirer.Separator());
     choices.push({ name: "🔎 Search borrower by name/phone", value: "search" });
@@ -426,7 +441,7 @@ async function returnBook() {
       if (!q) continue;
       if (q.toLowerCase() === "back") continue; // re-loop choose
       if (q.toLowerCase() === "cancel") return;
-      const reg = new RegExp(q, "i");
+      const reg = new RegExp(escapeRegExp(q), "i");
       const filteredGroups = groups.filter((g) => reg.test(g.borrowerName) || reg.test(g.borrowerPhone || ""));
       if (!filteredGroups.length) {
         console.log("⚠️ No matching borrowers found");
@@ -438,7 +453,7 @@ async function returnBook() {
           name: "sel",
           message: "Select borrower from search results (or Back):",
           choices: [
-            ...filteredGroups.map((g, idx) => ({ name: `${g.borrowerName} (${g.borrowerPhone || "no phone"}) — ${g.totalCopies} active copy(ies)`, value: g.repId })),
+            ...filteredGroups.map((g, idx) => ({ name: `${g.borrowerName} (${g.borrowerPhone || "no phone"}) — ${g.totalCopies} active copy(ies)`, value: JSON.stringify({ name: g.borrowerName, phone: g.borrowerPhone }) })),
             new inquirer.Separator(),
             { name: "↩ Back to Borrower List", value: "back" },
             { name: "↩ Back to Main Menu (Cancel)", value: "cancel-main" },
@@ -447,35 +462,35 @@ async function returnBook() {
       ]);
       if (sel === "back") continue;
       if (sel === "cancel-main") return;
-      // user selected a representative record id -> proceed to process return for this borrower
-      await processReturnForBorrower(bookId, sel);
+      // user selected a group -> proceed to process return for this borrower
+      const parsed = JSON.parse(sel);
+      await processReturnForBorrower(bookId, parsed);
       return;
     }
 
-    // If chosen is a representative record id, process return
-    await processReturnForBorrower(bookId, chosen);
+    // chosen will be a JSON string with name and phone
+    const parsed = JSON.parse(chosen);
+    await processReturnForBorrower(bookId, parsed);
     return;
   }
 }
 
 // Helper: process return for a borrower on a given book (handles multiple borrow records)
-async function processReturnForBorrower(bookId, recordId) {
-  // Fetch the primary record to know borrower identity
-  const primary = await BorrowRecord.findById(recordId);
-  if (!primary) {
-    console.log("❌ Borrow record not found");
-    return;
+async function processReturnForBorrower(bookId, borrower) {
+  const borrowerName = normalizeText(borrower.name) || "<unknown>";
+  const borrowerPhone = normalizeText(borrower.phone) || "";
+
+  // Build query: case-insensitive exact name match; phone either exact or empty as provided
+  const nameRegex = new RegExp(`^${escapeRegExp(borrowerName)}$`, "i");
+  const query = { book: bookId, returnedAt: null, borrowerName: { $regex: nameRegex } };
+  if (borrowerPhone !== "") {
+    query.borrowerPhone = borrowerPhone;
+  } else {
+    query.$or = [{ borrowerPhone: "" }, { borrowerPhone: null }, { borrowerPhone: { $exists: false } }];
   }
-  const borrowerName = primary.borrowerName || "<unknown>";
-  const borrowerPhone = primary.borrowerPhone || "";
 
   // Get all active records for this borrower/book sorted newest-first
-  let records = await BorrowRecord.find({
-    book: bookId,
-    borrowerName,
-    borrowerPhone,
-    returnedAt: null,
-  }).sort({ borrowedAt: -1 });
+  let records = await BorrowRecord.find(query).sort({ borrowedAt: -1 });
 
   if (!records.length) {
     console.log("⚠️ No active records for this borrower on this book");
@@ -562,7 +577,7 @@ async function borrowRecordExplorer() {
       name: "bookId",
       message: "Choose a book to view its borrowers (or Cancel):",
       choices: [
-        ...books.map((b) => ({ name: `${b.title} by ${b.author}`, value: b._id })),
+        ...books.map((b) => ({ name: `${b.title} by ${b.author}`, value: String(b._id) })),
         new inquirer.Separator(),
         { name: "↩ Back to Main Menu (Cancel)", value: "cancel-main" },
       ],
@@ -577,10 +592,12 @@ async function borrowRecordExplorer() {
     return;
   }
 
-  const borrowerMap = new Map(); // key = name-phone
+  const borrowerMap = new Map(); // key = normalized name-phone
   bookRecords.forEach((r) => {
-    const key = `${r.borrowerName}-${r.borrowerPhone}`;
-    const existing = borrowerMap.get(key) || { name: r.borrowerName, phone: r.borrowerPhone, total: 0, records: [] };
+    const name = normalizeText(r.borrowerName) || "<unknown>";
+    const phone = normalizeText(r.borrowerPhone) || "";
+    const key = `${name.toLowerCase()}||${phone}`;
+    const existing = borrowerMap.get(key) || { name, phone, total: 0, records: [] };
     existing.records.push(r);
     existing.total += (r.copies || 1);
     borrowerMap.set(key, existing);
@@ -595,7 +612,7 @@ async function borrowRecordExplorer() {
       name: "choice",
       message: "Choose a borrower from the list or Search by name:",
       choices: [
-        ...borrowers.map((b, idx) => ({ name: `${idx + 1}. ${b.name} (${b.phone}) — total ${b.total} copies`, value: idx })),
+        ...borrowers.map((b, idx) => ({ name: `${idx + 1}. ${b.name} (${b.phone || 'no phone'}) — total ${b.total} copies`, value: idx })),
         new inquirer.Separator(),
         { name: "🔎 Search borrower by name", value: "search" },
         { name: "↩ Back to Main Menu (Cancel)", value: "cancel-main" },
@@ -611,7 +628,7 @@ async function borrowRecordExplorer() {
     const { q } = await inquirer.prompt([{ name: "q", message: "Type name or phone to search (or 'cancel'):" }]);
     if (!q) return;
     if (q.toLowerCase() === "cancel") return;
-    const reg = new RegExp(q, "i");
+    const reg = new RegExp(escapeRegExp(q), "i");
     const matches = borrowers.filter((b) => reg.test(b.name) || reg.test(String(b.phone || "")));
     if (!matches.length) {
       console.log("⚠️ No matching borrowers found");
@@ -623,7 +640,7 @@ async function borrowRecordExplorer() {
         name: "sel",
         message: "Select person from search results (or Cancel):",
         choices: [
-          ...matches.map((m, idx) => ({ name: `${m.name} (${m.phone}) — total ${m.total}`, value: m })),
+          ...matches.map((m, idx) => ({ name: `${m.name} (${m.phone || 'no phone'}) — total ${m.total}`, value: m })),
           new inquirer.Separator(),
           { name: "↩ Back", value: "back" },
         ],
@@ -636,11 +653,131 @@ async function borrowRecordExplorer() {
   }
 
   // Show detailed borrow records for the selected person
-  console.log(`\n📖 Borrow records for ${selectedBorrower.name} (${selectedBorrower.phone}):`);
+  console.log(`\n📖 Borrow records for ${selectedBorrower.name} (${selectedBorrower.phone || 'no phone'}):`);
   selectedBorrower.records.forEach((r) => {
     console.log(`- ${r.book && r.book.title ? r.book.title : "(book deleted)"} | Borrowed on: ${r.borrowedAt ? r.borrowedAt.toDateString() : "unknown"} | Copies: ${r.copies || 1} | Returned: ${r.returnedAt ? r.returnedAt.toDateString() : "No"}`);
   });
   console.log("");
+}
+
+// Update book
+async function updateBook() {
+  const books = await Book.find();
+  if (!books.length) {
+    console.log("⚠️ No books to update");
+    return;
+  }
+
+  const { bookId } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "bookId",
+      message: "Choose a book to update (or Cancel):",
+      choices: [
+        ...books.map((b) => ({ name: `${b.title} by ${b.author}`, value: String(b._id) })),
+        new inquirer.Separator(),
+        { name: "↩ Back to Main Menu (Cancel)", value: "cancel-main" },
+      ],
+    },
+  ]);
+  if (bookId === "cancel-main") return;
+
+  const book = await Book.findById(bookId);
+  if (!book) {
+    console.log("❌ Book not found");
+    return;
+  }
+
+  // Work on a draft so we can preview changes
+  const draft = {
+    title: book.title,
+    author: book.author,
+    genre: book.genre,
+    year: book.year,
+    copiesAvailable: book.copiesAvailable,
+  };
+
+  const fields = [
+    { key: "title", prompt: "Title" },
+    { key: "author", prompt: "Author" },
+    { key: "genre", prompt: "Genre" },
+    { key: "year", prompt: "Year published" },
+    { key: "copiesAvailable", prompt: "Copies available" },
+  ];
+
+  let idx = 0;
+  while (idx < fields.length) {
+    const f = fields[idx];
+    const { value } = await inquirer.prompt([
+      {
+        name: "value",
+        message: `${f.prompt} (current: ${draft[f.key]}) - type 'back' to go back, 'cancel' for main menu:`,
+      },
+    ]);
+
+    if (value === undefined) return; // treat as cancel
+    const raw = String(value).trim();
+    if (raw.toLowerCase() === "back") {
+      if (idx === 0) {
+        // go back to book selection
+        return updateBook();
+      }
+      idx -= 1;
+      continue;
+    }
+    if (raw.toLowerCase() === "cancel") return;
+
+    // Empty input means keep the current value
+    if (raw === "") {
+      idx += 1;
+      continue;
+    }
+
+    if (f.key === "year") {
+      if (isNaN(Number(raw))) {
+        console.log("Enter a valid number for year");
+        continue;
+      }
+      draft.year = Number(raw);
+    } else if (f.key === "copiesAvailable") {
+      if (isNaN(Number(raw))) {
+        console.log("Enter a valid number for copies");
+        continue;
+      }
+      draft.copiesAvailable = Number(raw);
+    } else {
+      draft[f.key] = raw;
+    }
+
+    idx += 1;
+  }
+
+  // Preview changes
+  console.log("\nOriginal -> New:");
+  fields.forEach((f) => {
+    console.log(`${f.prompt}: ${book[f.key]} -> ${draft[f.key]}`);
+  });
+
+  const { confirm } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "confirm",
+      message: "Apply changes?",
+      choices: ["Apply changes", "Edit fields again", "Cancel to main menu"],
+    },
+  ]);
+
+  if (confirm === "Cancel to main menu") return;
+  if (confirm === "Edit fields again") return updateBook();
+
+  // Apply
+  book.title = draft.title;
+  book.author = draft.author;
+  book.genre = draft.genre;
+  book.year = draft.year;
+  book.copiesAvailable = draft.copiesAvailable;
+  await book.save();
+  console.log("✅ Book updated");
 }
 
 // Delete book
